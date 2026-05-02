@@ -13,58 +13,45 @@ import {
   AlertTriangle,
   CheckCircle2,
   Clock,
+  ExternalLink,
 } from "lucide-react";
 import { formatDistanceToNow, format } from "date-fns";
 
-interface AgentDecision {
-  timestamp: string;
-  action: string;
-  reasoning: string;
-  result: string;
-}
-
 interface ScrapeRun {
   id: string;
-  channels: string[];
+  channelsUsed: string[];
   startedAt: string;
   completedAt?: string;
-  status: "completed" | "running" | "failed" | "pending";
+  status: "COMPLETED" | "RUNNING" | "FAILED" | "PENDING";
   leadsFound: number;
-  errorsCount: number;
+  errors?: string[];
   costEstimate?: number;
   blockedSources?: string[];
-  agentDecisions?: AgentDecision[];
+  agentDecisions?: Record<string, unknown>;
+  leadCount: number;
 }
 
 interface RunsResponse {
   runs: ScrapeRun[];
-  total: number;
+  pagination: { total: number };
 }
 
-const statusConfig: Record<
-  ScrapeRun["status"],
-  {
-    variant: "success" | "info" | "error" | "warning";
-    icon: React.ComponentType<{ className?: string }>;
-  }
-> = {
-  completed: { variant: "success", icon: CheckCircle2 },
-  running: { variant: "info", icon: Loader2 },
-  failed: { variant: "error", icon: AlertTriangle },
-  pending: { variant: "warning", icon: Clock },
+const statusConfig = {
+  COMPLETED: { variant: "success" as const, icon: CheckCircle2 },
+  RUNNING: { variant: "info" as const, icon: Loader2 },
+  FAILED: { variant: "error" as const, icon: AlertTriangle },
+  PENDING: { variant: "warning" as const, icon: Clock },
 };
 
 function RunRow({ run }: { run: ScrapeRun }) {
   const [expanded, setExpanded] = useState(false);
-  const cfg = statusConfig[run.status];
+  const cfg = statusConfig[run.status] ?? statusConfig.PENDING;
   const StatusIcon = cfg.icon;
 
   const duration =
     run.completedAt && run.startedAt
       ? Math.round(
-          (new Date(run.completedAt).getTime() -
-            new Date(run.startedAt).getTime()) /
-            1000
+          (new Date(run.completedAt).getTime() - new Date(run.startedAt).getTime()) / 1000
         )
       : null;
 
@@ -74,7 +61,6 @@ function RunRow({ run }: { run: ScrapeRun }) {
         className="border-b border-gray-800 hover:bg-gray-800/40 transition-colors cursor-pointer"
         onClick={() => setExpanded((e) => !e)}
       >
-        {/* Expand icon */}
         <td className="px-3 py-3">
           {expanded ? (
             <ChevronDown className="w-4 h-4 text-gray-500" />
@@ -82,52 +68,35 @@ function RunRow({ run }: { run: ScrapeRun }) {
             <ChevronRight className="w-4 h-4 text-gray-500" />
           )}
         </td>
-
-        {/* Run ID */}
         <td className="px-3 py-3">
-          <span className="font-mono text-xs text-gray-300">
-            {run.id.slice(0, 8)}…
-          </span>
+          <span className="font-mono text-xs text-gray-300">{run.id.slice(0, 8)}…</span>
         </td>
-
-        {/* Channels */}
         <td className="px-3 py-3">
           <div className="flex flex-wrap gap-1">
-            {run.channels.slice(0, 4).map((ch) => (
-              <span
-                key={ch}
-                className="text-[10px] bg-gray-800 text-gray-400 px-1.5 py-0.5 rounded"
-              >
+            {run.channelsUsed.slice(0, 4).map((ch) => (
+              <span key={ch} className="text-[10px] bg-gray-800 text-gray-400 px-1.5 py-0.5 rounded">
                 {ch}
               </span>
             ))}
-            {run.channels.length > 4 && (
-              <span className="text-[10px] text-gray-500">
-                +{run.channels.length - 4}
-              </span>
+            {run.channelsUsed.length > 4 && (
+              <span className="text-[10px] text-gray-500">+{run.channelsUsed.length - 4}</span>
             )}
           </div>
         </td>
-
-        {/* Started */}
         <td className="px-3 py-3 text-xs text-gray-400 whitespace-nowrap">
           {format(new Date(run.startedAt), "MMM d, HH:mm")}
         </td>
-
-        {/* Completed */}
         <td className="px-3 py-3 text-xs text-gray-400 whitespace-nowrap">
           {run.completedAt
             ? formatDistanceToNow(new Date(run.completedAt), { addSuffix: true })
-            : run.status === "running"
+            : run.status === "RUNNING"
               ? "In progress…"
               : "—"}
         </td>
-
-        {/* Status */}
         <td className="px-3 py-3">
           <div className="flex items-center gap-1.5">
             <StatusIcon
-              className={`w-3.5 h-3.5 ${run.status === "running" ? "animate-spin" : ""} ${
+              className={`w-3.5 h-3.5 ${run.status === "RUNNING" ? "animate-spin" : ""} ${
                 cfg.variant === "success"
                   ? "text-emerald-400"
                   : cfg.variant === "error"
@@ -140,86 +109,58 @@ function RunRow({ run }: { run: ScrapeRun }) {
             <Badge variant={cfg.variant}>{run.status}</Badge>
           </div>
         </td>
-
-        {/* Leads Found */}
         <td className="px-3 py-3">
-          <span className="text-sm font-semibold text-white">
-            {run.leadsFound}
-          </span>
+          <span className="text-sm font-semibold text-white">{run.leadsFound}</span>
         </td>
-
-        {/* Errors */}
         <td className="px-3 py-3">
-          {run.errorsCount > 0 ? (
-            <span className="text-xs text-rose-400 font-medium">
-              {run.errorsCount}
-            </span>
+          {run.errors && run.errors.length > 0 ? (
+            <span className="text-xs text-rose-400 font-medium">{run.errors.length}</span>
           ) : (
             <span className="text-xs text-gray-600">0</span>
           )}
         </td>
-
-        {/* Duration / Cost */}
         <td className="px-3 py-3 text-xs text-gray-500 whitespace-nowrap">
           {duration != null && (
             <span>{duration < 60 ? `${duration}s` : `${Math.floor(duration / 60)}m ${duration % 60}s`}</span>
           )}
           {run.costEstimate != null && (
-            <span className="ml-2 text-gray-600">
-              ${run.costEstimate.toFixed(4)}
-            </span>
+            <span className="ml-2 text-gray-600">${run.costEstimate.toFixed(4)}</span>
           )}
         </td>
       </tr>
 
-      {/* Expanded details row */}
       {expanded && (
         <tr className="border-b border-gray-800 bg-gray-900/50">
           <td colSpan={9} className="px-5 py-4">
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-              {/* Agent Decisions */}
               <div className="lg:col-span-2">
-                <h4 className="text-xs font-semibold text-gray-300 mb-2">
-                  Agent Decisions Log
-                </h4>
-                {run.agentDecisions && run.agentDecisions.length > 0 ? (
-                  <div className="space-y-2 max-h-48 overflow-y-auto">
-                    {run.agentDecisions.map((decision, i) => (
-                      <div
-                        key={i}
-                        className="bg-gray-800 rounded-lg px-3 py-2 text-xs"
-                      >
-                        <div className="flex items-center gap-2 mb-1">
-                          <span className="text-gray-500 font-mono">
-                            {format(new Date(decision.timestamp), "HH:mm:ss")}
-                          </span>
-                          <span className="text-violet-300 font-medium">
-                            {decision.action}
-                          </span>
-                          <Badge
-                            variant={
-                              decision.result === "success" ? "success" : "error"
-                            }
-                          >
-                            {decision.result}
-                          </Badge>
-                        </div>
-                        <p className="text-gray-400">{decision.reasoning}</p>
+                <h4 className="text-xs font-semibold text-gray-300 mb-2">Channels Scraped</h4>
+                <div className="flex flex-wrap gap-2">
+                  {run.channelsUsed.map((ch) => (
+                    <span
+                      key={ch}
+                      className="text-xs bg-violet-900/30 text-violet-300 border border-violet-800/40 px-2 py-1 rounded"
+                    >
+                      {ch}
+                    </span>
+                  ))}
+                </div>
+                {run.errors && run.errors.length > 0 && (
+                  <div className="mt-3">
+                    <h4 className="text-xs font-semibold text-rose-300 mb-1">Errors</h4>
+                    {run.errors.slice(0, 5).map((e, i) => (
+                      <div key={i} className="text-xs text-rose-400/80 bg-rose-900/20 rounded px-2 py-1 mb-1">
+                        {e}
                       </div>
                     ))}
                   </div>
-                ) : (
-                  <p className="text-xs text-gray-500">
-                    No decision log available for this run.
-                  </p>
                 )}
               </div>
 
-              {/* Blocked Sources + Cost */}
-              <div className="space-y-4">
+              <div className="space-y-3">
                 {run.blockedSources && run.blockedSources.length > 0 && (
                   <div>
-                    <h4 className="text-xs font-semibold text-gray-300 mb-2">
+                    <h4 className="text-xs font-semibold text-gray-300 mb-1">
                       Blocked Sources ({run.blockedSources.length})
                     </h4>
                     <div className="space-y-1 max-h-28 overflow-y-auto">
@@ -234,32 +175,23 @@ function RunRow({ run }: { run: ScrapeRun }) {
                     </div>
                   </div>
                 )}
-
                 <div>
-                  <h4 className="text-xs font-semibold text-gray-300 mb-2">
-                    Run Summary
-                  </h4>
+                  <h4 className="text-xs font-semibold text-gray-300 mb-2">Run Summary</h4>
                   <div className="grid grid-cols-2 gap-2">
                     <div className="bg-gray-800 rounded-lg px-2 py-2 text-center">
-                      <div className="text-sm font-bold text-white">
-                        {run.leadsFound}
-                      </div>
-                      <div className="text-[10px] text-gray-500">leads</div>
+                      <div className="text-sm font-bold text-white">{run.leadsFound}</div>
+                      <div className="text-[10px] text-gray-500">leads saved</div>
                     </div>
                     <div className="bg-gray-800 rounded-lg px-2 py-2 text-center">
-                      <div className="text-sm font-bold text-white">
-                        {run.channels.length}
-                      </div>
+                      <div className="text-sm font-bold text-white">{run.channelsUsed.length}</div>
                       <div className="text-[10px] text-gray-500">channels</div>
                     </div>
-                    {run.costEstimate != null && (
+                    {duration != null && (
                       <div className="bg-gray-800 rounded-lg px-2 py-2 text-center col-span-2">
                         <div className="text-sm font-bold text-white">
-                          ${run.costEstimate.toFixed(4)}
+                          {duration < 60 ? `${duration}s` : `${Math.floor(duration / 60)}m ${duration % 60}s`}
                         </div>
-                        <div className="text-[10px] text-gray-500">
-                          est. cost
-                        </div>
+                        <div className="text-[10px] text-gray-500">duration</div>
                       </div>
                     )}
                   </div>
@@ -274,16 +206,26 @@ function RunRow({ run }: { run: ScrapeRun }) {
 }
 
 export default function RunsPage() {
-  const [data, setData] = useState<RunsResponse>({ runs: [], total: 0 });
+  const [data, setData] = useState<RunsResponse>({ runs: [], pagination: { total: 0 } });
+  const [projectId, setProjectId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [triggering, setTriggering] = useState(false);
+  const [runError, setRunError] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetch("/api/projects")
+      .then((r) => r.json())
+      .then((d) => setProjectId(d.projects?.[0]?.id ?? null))
+      .catch(() => setProjectId(null));
+  }, []);
 
   const fetchRuns = useCallback(async () => {
+    if (!projectId) return;
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch("/api/scrape/runs");
+      const res = await fetch(`/api/scrape/runs?projectId=${projectId}`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const json: RunsResponse = await res.json();
       setData(json);
@@ -292,30 +234,44 @@ export default function RunsPage() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [projectId]);
 
   useEffect(() => {
-    fetchRuns();
-  }, [fetchRuns]);
+    if (projectId) fetchRuns();
+  }, [projectId, fetchRuns]);
 
   const handleNewRun = async () => {
     setTriggering(true);
+    setRunError(null);
     try {
-      const res = await fetch("/api/scrape/runs", { method: "POST" });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const res = await fetch("/api/scrape/runs", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(projectId ? { projectId } : {}),
+      });
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}));
+        throw new Error(j.error ?? `HTTP ${res.status}`);
+      }
+      const result = await res.json();
+      setRunError(null);
+      // Immediately refresh to show the completed run
       await fetchRuns();
-    } catch {
-      // Silent fail — user can retry
+      return result;
+    } catch (err) {
+      setRunError(err instanceof Error ? err.message : "Run failed");
     } finally {
       setTriggering(false);
     }
   };
 
+  const total = data.pagination?.total ?? 0;
+
   return (
     <div className="flex flex-col flex-1">
       <Header
         title="Scraper Run Logs"
-        subtitle={`${data.total} total runs`}
+        subtitle={`${total} total run${total !== 1 ? "s" : ""}`}
         actions={
           <div className="flex items-center gap-2">
             <button
@@ -332,11 +288,16 @@ export default function RunsPage() {
               className="flex items-center gap-2 px-3 py-1.5 bg-violet-600 hover:bg-violet-500 text-white text-xs font-medium rounded-lg transition-colors disabled:opacity-50"
             >
               {triggering ? (
-                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                <>
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  Scraping live data…
+                </>
               ) : (
-                <Play className="w-3.5 h-3.5" />
+                <>
+                  <Play className="w-3.5 h-3.5" />
+                  New Run
+                </>
               )}
-              New Run
             </button>
           </div>
         }
@@ -345,7 +306,19 @@ export default function RunsPage() {
       <div className="flex-1 p-6">
         {error && (
           <div className="mb-4 bg-rose-900/30 border border-rose-800/60 rounded-xl px-4 py-3 text-sm text-rose-300">
-            Failed to load runs: {error}
+            {error}
+          </div>
+        )}
+        {runError && (
+          <div className="mb-4 bg-rose-900/30 border border-rose-800/60 rounded-xl px-4 py-3 text-sm text-rose-300">
+            Run failed: {runError}
+          </div>
+        )}
+
+        {triggering && (
+          <div className="mb-4 bg-violet-900/20 border border-violet-800/40 rounded-xl px-4 py-3 text-sm text-violet-300 flex items-center gap-2">
+            <Loader2 className="w-4 h-4 animate-spin" />
+            Scraping Reddit, Hacker News, GitHub, and StackOverflow for live intent signals… this takes ~20–40 seconds.
           </div>
         )}
 
@@ -363,11 +336,15 @@ export default function RunsPage() {
                 <Play className="w-5 h-5 text-gray-500" />
               </div>
               <p className="text-sm text-gray-400">No scrape runs yet</p>
+              <p className="text-xs text-gray-600 max-w-xs text-center">
+                Click "New Run" to start scraping Reddit, Hacker News, GitHub Issues, and StackOverflow for live intent signals.
+              </p>
               <button
                 onClick={handleNewRun}
-                className="flex items-center gap-2 px-4 py-2 bg-violet-600 hover:bg-violet-500 text-white text-sm font-medium rounded-lg transition-colors"
+                disabled={triggering}
+                className="flex items-center gap-2 px-4 py-2 bg-violet-600 hover:bg-violet-500 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50"
               >
-                <Play className="w-4 h-4" />
+                {triggering ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}
                 Start First Run
               </button>
             </div>
@@ -377,30 +354,14 @@ export default function RunsPage() {
                 <thead>
                   <tr className="border-b border-gray-800">
                     <th className="w-8 px-3 py-3" />
-                    <th className="text-left px-3 py-3 text-xs font-medium text-gray-400">
-                      Run ID
-                    </th>
-                    <th className="text-left px-3 py-3 text-xs font-medium text-gray-400">
-                      Channels
-                    </th>
-                    <th className="text-left px-3 py-3 text-xs font-medium text-gray-400 whitespace-nowrap">
-                      Started
-                    </th>
-                    <th className="text-left px-3 py-3 text-xs font-medium text-gray-400 whitespace-nowrap">
-                      Completed
-                    </th>
-                    <th className="text-left px-3 py-3 text-xs font-medium text-gray-400">
-                      Status
-                    </th>
-                    <th className="text-left px-3 py-3 text-xs font-medium text-gray-400 whitespace-nowrap">
-                      Leads
-                    </th>
-                    <th className="text-left px-3 py-3 text-xs font-medium text-gray-400">
-                      Errors
-                    </th>
-                    <th className="text-left px-3 py-3 text-xs font-medium text-gray-400">
-                      Duration
-                    </th>
+                    <th className="text-left px-3 py-3 text-xs font-medium text-gray-400">Run ID</th>
+                    <th className="text-left px-3 py-3 text-xs font-medium text-gray-400">Channels</th>
+                    <th className="text-left px-3 py-3 text-xs font-medium text-gray-400 whitespace-nowrap">Started</th>
+                    <th className="text-left px-3 py-3 text-xs font-medium text-gray-400 whitespace-nowrap">Completed</th>
+                    <th className="text-left px-3 py-3 text-xs font-medium text-gray-400">Status</th>
+                    <th className="text-left px-3 py-3 text-xs font-medium text-gray-400 whitespace-nowrap">Leads</th>
+                    <th className="text-left px-3 py-3 text-xs font-medium text-gray-400">Errors</th>
+                    <th className="text-left px-3 py-3 text-xs font-medium text-gray-400">Duration</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -412,6 +373,15 @@ export default function RunsPage() {
             </div>
           )}
         </Card>
+
+        <div className="mt-4 bg-gray-900/40 border border-gray-800/60 rounded-xl p-4 text-xs text-gray-500">
+          <div className="flex items-center gap-2 mb-1 text-gray-400 font-medium">
+            <ExternalLink className="w-3.5 h-3.5" />
+            Live data sources
+          </div>
+          Reddit (public JSON API) · Hacker News (Algolia API) · GitHub Issues (REST API) · Stack Exchange API
+          — no authentication required. Add a <code className="text-violet-400">GITHUB_TOKEN</code> env var for higher GitHub rate limits.
+        </div>
       </div>
     </div>
   );
