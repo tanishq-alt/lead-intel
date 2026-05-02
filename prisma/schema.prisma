@@ -1,0 +1,238 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id        String    @id @default(cuid())
+  email     String    @unique
+  name      String?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  projects  Project[]
+}
+
+model Project {
+  id             String          @id @default(cuid())
+  userId         String
+  name           String
+  description    String?
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  user           User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  channels       Channel[]
+  scrapRuns      ScrapRun[]
+  leads          Lead[]
+  intentSignals  IntentSignal[]
+  competitors    Competitor[]
+  painPoints     PainPoint[]
+  agentLogs      AgentLog[]
+  memoryPatterns MemoryPattern[]
+  exports        Export[]
+}
+
+enum ChannelType {
+  GOOGLE
+  REDDIT
+  LINKEDIN_POSTS
+  LINKEDIN_JOBS
+  TWITTER
+  PRODUCT_HUNT
+  G2
+  CAPTERRA
+  INDEED
+  GLASSDOOR
+  CRUNCHBASE
+  HACKER_NEWS
+  GITHUB_ISSUES
+  STACKOVERFLOW
+  QUORA
+  YOUTUBE
+  NEWS
+  RFP
+  CUSTOM
+}
+
+enum Frequency {
+  HOURLY
+  DAILY
+  WEEKLY
+}
+
+model Channel {
+  id          String      @id @default(cuid())
+  projectId   String
+  name        ChannelType
+  url         String?
+  isEnabled   Boolean     @default(true)
+  frequency   Frequency   @default(DAILY)
+  maxPages    Int         @default(10)
+  geoFilter   String?
+  nicheFilter String?
+  createdAt   DateTime    @default(now())
+  project     Project     @relation(fields: [projectId], references: [id], onDelete: Cascade)
+}
+
+enum RunStatus {
+  PENDING
+  RUNNING
+  COMPLETED
+  FAILED
+}
+
+model ScrapRun {
+  id             String     @id @default(cuid())
+  projectId      String
+  status         RunStatus  @default(PENDING)
+  channelsUsed   String[]
+  startedAt      DateTime   @default(now())
+  completedAt    DateTime?
+  leadsFound     Int        @default(0)
+  errors         String[]
+  blockedSources String[]
+  costEstimate   Float?
+  agentDecisions Json       @default("{}")
+  createdAt      DateTime   @default(now())
+  project        Project    @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  leads          Lead[]
+  agentLogs      AgentLog[]
+}
+
+enum CompanySize {
+  STARTUP
+  SMB
+  MID_MARKET
+  ENTERPRISE
+}
+
+enum LeadStatus {
+  NEW
+  SAVED
+  REJECTED
+  EXPORTED
+  CONTACTED
+}
+
+model Lead {
+  id                       String       @id @default(cuid())
+  projectId                String
+  scrapRunId               String?
+  name                     String?
+  designation              String?
+  company                  String?
+  industry                 String?
+  companySize              CompanySize?
+  location                 String?
+  country                  String?
+  city                     String?
+  sourceChannel            String
+  sourceUrl                String
+  intentSignal             String
+  intentScore              Int
+  confidenceScore          Int
+  painPoint                String?
+  competitorMentioned      String?
+  recommendedOutreachAngle String?
+  rawEvidence              String
+  techStackDetected        String?
+  triggerEvent             String?
+  keywordsMatched          String[]
+  status                   LeadStatus   @default(NEW)
+  createdAt                DateTime     @default(now())
+  updatedAt                DateTime     @updatedAt
+  project                  Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  scrapRun                 ScrapRun?    @relation(fields: [scrapRunId], references: [id])
+  leadSources              LeadSource[]
+}
+
+model LeadSource {
+  id      String   @id @default(cuid())
+  leadId  String
+  channel String
+  url     String
+  snippet String
+  foundAt DateTime @default(now())
+  lead    Lead     @relation(fields: [leadId], references: [id], onDelete: Cascade)
+}
+
+model IntentSignal {
+  id        String   @id @default(cuid())
+  projectId String
+  signal    String
+  score     Int
+  count     Int      @default(1)
+  lastSeen  DateTime @default(now())
+  createdAt DateTime @default(now())
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+}
+
+model Competitor {
+  id           String   @id @default(cuid())
+  projectId    String
+  name         String
+  mentionCount Int      @default(1)
+  createdAt    DateTime @default(now())
+  project      Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+}
+
+model PainPoint {
+  id          String   @id @default(cuid())
+  projectId   String
+  description String
+  frequency   Int      @default(1)
+  createdAt   DateTime @default(now())
+  project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+}
+
+model AgentLog {
+  id         String    @id @default(cuid())
+  projectId  String
+  scrapRunId String?
+  agentName  String
+  action     String
+  details    Json      @default("{}")
+  createdAt  DateTime  @default(now())
+  project    Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  scrapRun   ScrapRun? @relation(fields: [scrapRunId], references: [id])
+}
+
+enum PatternType {
+  CHANNEL_PERFORMANCE
+  KEYWORD_CONVERSION
+  COMPETITOR_TRIGGER
+  PAIN_POINT
+  FALSE_POSITIVE
+  INTENT_SCORING
+}
+
+model MemoryPattern {
+  id          String      @id @default(cuid())
+  projectId   String
+  patternType PatternType
+  data        Json
+  score       Float       @default(0)
+  usageCount  Int         @default(0)
+  lastUsed    DateTime    @default(now())
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+  project     Project     @relation(fields: [projectId], references: [id], onDelete: Cascade)
+}
+
+enum ExportFormat {
+  CSV
+  JSON
+}
+
+model Export {
+  id        String       @id @default(cuid())
+  projectId String
+  format    ExportFormat @default(CSV)
+  leadCount Int
+  filePath  String?
+  createdAt DateTime     @default(now())
+  project   Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+}
