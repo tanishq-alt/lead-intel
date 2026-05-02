@@ -9,12 +9,14 @@ import {
   PlayCircle,
   Brain,
   Zap,
+  Table2,
 } from "lucide-react";
 
 const navItems = [
+  { href: "/clay", label: "Live Scraper", icon: Table2, badge: "LIVE" },
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
   { href: "/channels", label: "Channels", icon: Radio },
-  { href: "/leads", label: "Leads", icon: Users },
+  { href: "/leads", label: "Saved Leads", icon: Users },
   { href: "/runs", label: "Run Logs", icon: PlayCircle },
   { href: "/memory", label: "Memory", icon: Brain },
 ];
@@ -23,23 +25,20 @@ export function Sidebar() {
   const pathname = usePathname();
 
   return (
-    <aside className="w-60 flex-shrink-0 bg-gray-900 border-r border-gray-800 flex flex-col h-full">
+    <aside className="w-56 flex-shrink-0 bg-gray-900 border-r border-gray-800 flex flex-col h-full">
       {/* Logo */}
-      <div className="h-16 flex items-center gap-2.5 px-5 border-b border-gray-800">
+      <div className="h-14 flex items-center gap-2.5 px-4 border-b border-gray-800">
         <div className="w-7 h-7 rounded-lg bg-violet-600 flex items-center justify-center">
           <Zap className="w-4 h-4 text-white" />
         </div>
         <span className="text-sm font-semibold text-white tracking-tight">
           Lead Intel
         </span>
-        <span className="ml-auto text-[10px] font-medium bg-violet-900/60 text-violet-300 rounded px-1.5 py-0.5">
-          RUFLO
-        </span>
       </div>
 
       {/* Navigation */}
-      <nav className="flex-1 px-3 py-4 space-y-0.5 overflow-y-auto">
-        {navItems.map(({ href, label, icon: Icon }) => {
+      <nav className="flex-1 px-2 py-3 space-y-0.5 overflow-y-auto">
+        {navItems.map(({ href, label, icon: Icon, badge }) => {
           const isActive =
             href === "/" ? pathname === "/" : pathname.startsWith(href);
           return (
@@ -53,17 +52,22 @@ export function Sidebar() {
               }`}
             >
               <Icon className="w-4 h-4 flex-shrink-0" />
-              {label}
+              <span className="flex-1">{label}</span>
+              {badge && (
+                <span className="text-[9px] font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 rounded px-1 py-0.5">
+                  {badge}
+                </span>
+              )}
             </Link>
           );
         })}
       </nav>
 
       {/* Footer */}
-      <div className="px-4 py-4 border-t border-gray-800">
+      <div className="px-4 py-3 border-t border-gray-800">
         <div className="flex items-center gap-2">
           <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-          <span className="text-xs text-gray-400">Ruflo Agent Active</span>
+          <span className="text-xs text-gray-400">Live scraping ready</span>
         </div>
       </div>
     </aside>
