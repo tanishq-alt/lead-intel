@@ -1,24 +1,12 @@
 import type { RawSignal, ScrapeConfig } from "./types";
+import { buildQueriesFromNiche, FALLBACK_QUERIES } from "./queries";
 
 const SUBREDDITS = [
   "SaaS", "entrepreneur", "startups", "smallbusiness",
   "webdev", "devops", "ExperiencedDevs", "programming",
   "marketing", "sales", "businessintelligence",
   "humanresources", "fintech", "ecommerce",
-  "software", "ProductManagement", "Accounting",
-];
-
-const BASE_QUERIES = [
-  "alternative to",
-  "alternatives to",
-  "switching from",
-  "replacing",
-  "frustrated with",
-  "anyone recommend",
-  "best tool for",
-  "looking for a",
-  "migrating from",
-  "moved away from",
+  "software", "ProductManagement", "Accounting", "techsupport",
 ];
 
 interface RedditPost {
@@ -37,9 +25,7 @@ interface RedditPost {
 }
 
 interface RedditSearchResponse {
-  data: {
-    children: RedditPost[];
-  };
+  data: { children: RedditPost[] };
 }
 
 export async function scrapeReddit(config: ScrapeConfig = {}): Promise<RawSignal[]> {
@@ -47,18 +33,17 @@ export async function scrapeReddit(config: ScrapeConfig = {}): Promise<RawSignal
   const maxResults = config.maxResults ?? 50;
   const seen = new Set<string>();
 
-  const searchTerms = config.keywords?.length
-    ? config.keywords
-    : BASE_QUERIES;
-
-  const searchTargets = config.competitors?.length
-    ? [...searchTerms, ...config.competitors.map(c => `alternative to ${c}`)]
-    : searchTerms;
+  // Build targeted queries from the user's niche
+  const queries =
+    config.keywords?.length || config.competitors?.length
+      ? buildQueriesFromNiche(config.keywords ?? [], config.competitors ?? [], 8)
+      : FALLBACK_QUERIES.slice(0, 6);
 
   const fetches: Promise<void>[] = [];
 
-  for (const query of searchTargets.slice(0, 4)) {
-    for (const sub of SUBREDDITS.slice(0, 3)) {
+  // Per-subreddit search (top 3 subreddits × top 3 queries)
+  for (const query of queries.slice(0, 3)) {
+    for (const sub of SUBREDDITS.slice(0, 4)) {
       fetches.push(
         (async () => {
           try {
@@ -102,12 +87,12 @@ export async function scrapeReddit(config: ScrapeConfig = {}): Promise<RawSignal
     }
   }
 
-  // Also search global Reddit
-  for (const query of searchTargets.slice(0, 3)) {
+  // Global Reddit search for remaining queries
+  for (const query of queries.slice(0, 5)) {
     fetches.push(
       (async () => {
         try {
-          const url = `https://www.reddit.com/search.json?q=${encodeURIComponent(query)}&sort=new&limit=10&t=month`;
+          const url = `https://www.reddit.com/search.json?q=${encodeURIComponent(query)}&sort=new&limit=15&t=month`;
           const res = await fetch(url, {
             headers: {
               "User-Agent": "LeadIntel/1.0 (lead intelligence aggregator)",

@@ -1,4 +1,5 @@
 import type { RawSignal, ScrapeConfig } from "./types";
+import { buildQueriesFromNiche, FALLBACK_QUERIES } from "./queries";
 
 interface GHIssue {
   id: number;
@@ -17,18 +18,6 @@ interface GHSearchResponse {
   items: GHIssue[];
 }
 
-const GITHUB_QUERIES = [
-  "alternative to",
-  "switch from",
-  "migrate from",
-  "better alternative",
-  "replace with",
-  "comparison",
-  "benchmark vs",
-  "pricing too expensive",
-  "feature request alternative",
-];
-
 export async function scrapeGitHubIssues(config: ScrapeConfig = {}): Promise<RawSignal[]> {
   const signals: RawSignal[] = [];
   const seen = new Set<string>();
@@ -41,17 +30,12 @@ export async function scrapeGitHubIssues(config: ScrapeConfig = {}): Promise<Raw
   };
   if (token) headers["Authorization"] = `Bearer ${token}`;
 
-  const queries = config.keywords?.length
-    ? config.keywords
-    : GITHUB_QUERIES;
+  const queries =
+    config.keywords?.length || config.competitors?.length
+      ? buildQueriesFromNiche(config.keywords ?? [], config.competitors ?? [], 5)
+      : FALLBACK_QUERIES.slice(0, 4);
 
-  if (config.competitors?.length) {
-    for (const c of config.competitors.slice(0, 3)) {
-      queries.push(`migrate from ${c}`);
-    }
-  }
-
-  const fetches = queries.slice(0, 5).map(async (q) => {
+  const fetches = queries.map(async (q) => {
     try {
       const url = `https://api.github.com/search/issues?q=${encodeURIComponent(q)}+type:issue+state:open&sort=updated&per_page=10`;
       const res = await fetch(url, { headers, signal: AbortSignal.timeout(8000) });
@@ -74,7 +58,7 @@ export async function scrapeGitHubIssues(config: ScrapeConfig = {}): Promise<Raw
           score: issue.reactions?.total_count ?? 0,
           commentCount: issue.comments,
           createdAt: new Date(issue.created_at),
-          tags: issue.labels.map(l => l.name),
+          tags: issue.labels.map((l) => l.name),
         });
       }
     } catch {

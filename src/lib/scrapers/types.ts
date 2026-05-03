@@ -40,3 +40,15 @@ export interface ScrapeConfig {
   maxResults?: number;
   geo?: string;
 }
+
+export type ScraperChannel =
+  | "REDDIT"
+  | "HACKER_NEWS"
+  | "GITHUB_ISSUES"
+  | "STACKOVERFLOW"
+  | "YOUTUBE"
+  | "TWITTER"
+  | "JOBS"
+  | "DEV_TO"
+  | "PRODUCT_HUNT"
+  | "ALL";

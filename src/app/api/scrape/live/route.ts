@@ -2,15 +2,21 @@ import { NextRequest } from "next/server";
 import { z } from "zod";
 import { runScrapers } from "@/lib/scrapers/index";
 import { signalToLead } from "@/lib/intent";
+import type { ScraperChannel } from "@/lib/scrapers/types";
 
 export const maxDuration = 60;
 
+const VALID_CHANNELS: ScraperChannel[] = [
+  "REDDIT", "HACKER_NEWS", "GITHUB_ISSUES", "STACKOVERFLOW",
+  "YOUTUBE", "TWITTER", "JOBS", "DEV_TO", "PRODUCT_HUNT", "ALL",
+];
+
 const Schema = z.object({
-  channels: z.array(z.enum(["REDDIT", "HACKER_NEWS", "GITHUB_ISSUES", "STACKOVERFLOW", "ALL"])).optional().default(["ALL"]),
-  keywords: z.array(z.string()).optional(),
-  competitors: z.array(z.string()).optional(),
+  channels: z.array(z.enum(VALID_CHANNELS as [ScraperChannel, ...ScraperChannel[]])).optional().default(["ALL"]),
+  keywords: z.array(z.string().max(80)).max(20).optional().default([]),
+  competitors: z.array(z.string().max(80)).max(20).optional().default([]),
   minScore: z.coerce.number().int().min(0).max(10).optional().default(0),
-  limit: z.coerce.number().int().min(1).max(200).optional().default(100),
+  limit: z.coerce.number().int().min(1).max(250).optional().default(120),
 });
 
 export async function POST(request: NextRequest) {
@@ -22,6 +28,13 @@ export async function POST(request: NextRequest) {
     }
 
     const { channels, keywords, competitors, minScore, limit } = parsed.data;
+
+    if (!keywords.length && !competitors.length) {
+      return Response.json(
+        { error: "Provide at least one keyword or competitor to search for targeted results." },
+        { status: 400 }
+      );
+    }
 
     const signals = await runScrapers({
       channels,
@@ -35,21 +48,17 @@ export async function POST(request: NextRequest) {
         const lead = signalToLead(signal, "live");
         return {
           id: signal.id,
-          // Source info
           platform: signal.channel,
           platformUrl: signal.url,
           subreddit: signal.subreddit ?? null,
           postedAt: signal.createdAt,
-          // Author
           author: signal.author,
           authorUrl: signal.authorUrl ?? null,
-          // Detected info
           name: lead.name,
           designation: lead.designation,
           company: lead.company,
           industry: lead.industry,
           techStack: lead.techStackDetected,
-          // Intent
           intentScore: lead.intentScore,
           confidenceScore: lead.confidenceScore,
           intentSignals: lead.intentSignal,
@@ -57,7 +66,6 @@ export async function POST(request: NextRequest) {
           competitorMentioned: lead.competitorMentioned,
           keywords: lead.keywordsMatched,
           outreachAngle: lead.recommendedOutreachAngle,
-          // Raw
           title: signal.title,
           bodyPreview: signal.body.slice(0, 300),
           fullBody: signal.body,
@@ -74,7 +82,7 @@ export async function POST(request: NextRequest) {
       meta: {
         total: leads.length,
         rawSignals: signals.length,
-        channels: channels,
+        channels: [...new Set(signals.map((s) => s.channel))],
         scrapedAt: new Date().toISOString(),
       },
     });
@@ -82,22 +90,4 @@ export async function POST(request: NextRequest) {
     console.error("[POST /api/scrape/live]", error);
     return Response.json({ error: "Scrape failed", detail: String(error) }, { status: 500 });
   }
-}
-
-export async function GET(request: NextRequest) {
-  const { searchParams } = request.nextUrl;
-  const body: Record<string, unknown> = {};
-  const ch = searchParams.get("channels");
-  if (ch) body.channels = ch.split(",");
-  const kw = searchParams.get("keywords");
-  if (kw) body.keywords = kw.split(",");
-  const minScore = searchParams.get("minScore");
-  if (minScore) body.minScore = Number(minScore);
-
-  const fakeReq = new Request(request.url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
-  return POST(new NextRequest(fakeReq));
 }

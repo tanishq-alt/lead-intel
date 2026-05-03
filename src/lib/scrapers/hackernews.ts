@@ -1,4 +1,5 @@
 import type { RawSignal, ScrapeConfig } from "./types";
+import { buildQueriesFromNiche, FALLBACK_QUERIES } from "./queries";
 
 interface HNHit {
   objectID: string;
@@ -19,35 +20,20 @@ interface HNSearchResponse {
   hits: HNHit[];
 }
 
-const HN_QUERIES = [
-  "Ask HN: alternatives to",
-  "Ask HN: best tool for",
-  "Ask HN: what do you use for",
-  "switching from",
-  "frustrated with",
-  "alternative to",
-  "looking for recommendation",
-];
-
 export async function scrapeHackerNews(config: ScrapeConfig = {}): Promise<RawSignal[]> {
   const signals: RawSignal[] = [];
   const seen = new Set<string>();
   const maxResults = config.maxResults ?? 50;
 
-  const queries = config.keywords?.length
-    ? [...HN_QUERIES.slice(0, 2), ...config.keywords]
-    : HN_QUERIES;
+  const queries =
+    config.keywords?.length || config.competitors?.length
+      ? buildQueriesFromNiche(config.keywords ?? [], config.competitors ?? [], 6)
+      : FALLBACK_QUERIES.slice(0, 5);
 
-  if (config.competitors?.length) {
-    for (const c of config.competitors.slice(0, 3)) {
-      queries.push(`alternative to ${c}`);
-    }
-  }
-
-  const fetches = queries.slice(0, 6).map(async (q) => {
+  const fetches = queries.map(async (q) => {
     try {
-      // Search stories
-      const storyUrl = `https://hn.algolia.com/api/v1/search?query=${encodeURIComponent(q)}&tags=story&hitsPerPage=10`;
+      // Stories
+      const storyUrl = `https://hn.algolia.com/api/v1/search?query=${encodeURIComponent(q)}&tags=story&hitsPerPage=15`;
       const storyRes = await fetch(storyUrl, { signal: AbortSignal.timeout(8000) });
       if (storyRes.ok) {
         const data: HNSearchResponse = await storyRes.json();
@@ -70,8 +56,8 @@ export async function scrapeHackerNews(config: ScrapeConfig = {}): Promise<RawSi
         }
       }
 
-      // Search comments
-      const commentUrl = `https://hn.algolia.com/api/v1/search?query=${encodeURIComponent(q)}&tags=comment&hitsPerPage=10`;
+      // Comments
+      const commentUrl = `https://hn.algolia.com/api/v1/search?query=${encodeURIComponent(q)}&tags=comment&hitsPerPage=15`;
       const commentRes = await fetch(commentUrl, { signal: AbortSignal.timeout(8000) });
       if (commentRes.ok) {
         const data: HNSearchResponse = await commentRes.json();

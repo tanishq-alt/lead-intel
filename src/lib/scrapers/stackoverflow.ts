@@ -1,4 +1,5 @@
 import type { RawSignal, ScrapeConfig } from "./types";
+import { buildQueriesFromNiche, FALLBACK_QUERIES } from "./queries";
 
 interface SOQuestion {
   question_id: number;
@@ -17,24 +18,17 @@ interface SOResponse {
   items: SOQuestion[];
 }
 
-const SO_QUERIES = [
-  "alternative to",
-  "best tool for",
-  "switching from",
-  "migrate from",
-  "compare tools",
-  "recommendation for",
-  "too expensive",
-];
-
 export async function scrapeStackOverflow(config: ScrapeConfig = {}): Promise<RawSignal[]> {
   const signals: RawSignal[] = [];
   const seen = new Set<string>();
   const maxResults = config.maxResults ?? 30;
 
-  const queries = config.keywords?.length ? config.keywords : SO_QUERIES;
+  const queries =
+    config.keywords?.length || config.competitors?.length
+      ? buildQueriesFromNiche(config.keywords ?? [], config.competitors ?? [], 4)
+      : FALLBACK_QUERIES.slice(0, 4);
 
-  const fetches = queries.slice(0, 4).map(async (q) => {
+  const fetches = queries.map(async (q) => {
     try {
       const url = `https://api.stackexchange.com/2.3/search/advanced?q=${encodeURIComponent(q)}&site=stackoverflow&order=desc&sort=activity&pagesize=10&filter=withbody`;
       const res = await fetch(url, { signal: AbortSignal.timeout(8000) });
