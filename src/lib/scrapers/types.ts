@@ -11,6 +11,7 @@ export interface RawSignal {
   commentCount?: number;
   createdAt: Date;
   tags?: string[];
+  competitorName?: string;
 }
 
 export interface DetectedLead {
@@ -39,6 +40,8 @@ export interface ScrapeConfig {
   industries?: string[];
   maxResults?: number;
   geo?: string;
+  dateRange?: "today" | "7d" | "30d" | "90d" | "all";
+  customUrls?: string[];
 }
 
 export type ScraperChannel =
@@ -51,4 +54,11 @@ export type ScraperChannel =
   | "JOBS"
   | "DEV_TO"
   | "PRODUCT_HUNT"
+  | "LINKEDIN"
+  | "FACEBOOK_GROUPS"
+  | "QUORA"
+  | "G2"
+  | "MEDIUM"
+  | "CHANGELOG"
+  | "CUSTOM"
   | "ALL";

@@ -29,6 +29,7 @@ model Project {
   leads          Lead[]
   intentSignals  IntentSignal[]
   competitors    Competitor[]
+  competitorUpdates CompetitorUpdate[]
   painPoints     PainPoint[]
   agentLogs      AgentLog[]
   memoryPatterns MemoryPattern[]
@@ -171,12 +172,45 @@ model IntentSignal {
 }
 
 model Competitor {
-  id           String   @id @default(cuid())
-  projectId    String
-  name         String
-  mentionCount Int      @default(1)
-  createdAt    DateTime @default(now())
-  project      Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  id             String            @id @default(cuid())
+  projectId      String
+  name           String
+  mentionCount   Int               @default(1)
+  domain         String?
+  priority       String?
+  category       String?
+  relationship   String?
+  linkedinSlug   String?
+  twitterHandle  String?
+  productHuntSlug String?
+  youtubeHandle  String?
+  isActive       Boolean           @default(true)
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+  project        Project           @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  updates        CompetitorUpdate[]
+}
+
+model CompetitorUpdate {
+  id             String     @id @default(cuid())
+  competitorId   String
+  projectId      String
+  channel        String
+  url            String
+  title          String
+  summary        String     @db.Text
+  updateType     String
+  leadMagnetType String?
+  engagementScore Int       @default(0)
+  scrapedAt      DateTime   @default(now())
+  publishedAt    DateTime?
+  competitor     Competitor @relation(fields: [competitorId], references: [id], onDelete: Cascade)
+  project        Project    @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([competitorId])
+  @@index([projectId])
+  @@index([updateType])
+  @@index([scrapedAt])
 }
 
 model PainPoint {

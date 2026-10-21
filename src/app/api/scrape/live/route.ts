@@ -8,7 +8,8 @@ export const maxDuration = 60;
 
 const VALID_CHANNELS: ScraperChannel[] = [
   "REDDIT", "HACKER_NEWS", "GITHUB_ISSUES", "STACKOVERFLOW",
-  "YOUTUBE", "TWITTER", "JOBS", "DEV_TO", "PRODUCT_HUNT", "ALL",
+  "YOUTUBE", "TWITTER", "JOBS", "DEV_TO", "PRODUCT_HUNT",
+  "LINKEDIN", "FACEBOOK_GROUPS", "QUORA", "G2", "MEDIUM", "CUSTOM", "ALL",
 ];
 
 const Schema = z.object({
@@ -17,6 +18,8 @@ const Schema = z.object({
   competitors: z.array(z.string().max(80)).max(20).optional().default([]),
   minScore: z.coerce.number().int().min(0).max(10).optional().default(0),
   limit: z.coerce.number().int().min(1).max(250).optional().default(120),
+  dateRange: z.enum(["today", "7d", "30d", "90d", "all"]).optional().default("all"),
+  customUrls: z.array(z.string().url().max(500)).max(20).optional().default([]),
 });
 
 export async function POST(request: NextRequest) {
@@ -27,11 +30,11 @@ export async function POST(request: NextRequest) {
       return Response.json({ error: "Validation failed", issues: parsed.error.issues }, { status: 400 });
     }
 
-    const { channels, keywords, competitors, minScore, limit } = parsed.data;
+    const { channels, keywords, competitors, minScore, limit, dateRange, customUrls } = parsed.data;
 
-    if (!keywords.length && !competitors.length) {
+    if (!keywords.length && !competitors.length && !customUrls.length) {
       return Response.json(
-        { error: "Provide at least one keyword or competitor to search for targeted results." },
+        { error: "Provide at least one keyword, competitor, or custom URL to search for targeted results." },
         { status: 400 }
       );
     }
@@ -41,6 +44,8 @@ export async function POST(request: NextRequest) {
       keywords,
       competitors,
       maxResults: limit,
+      dateRange,
+      customUrls,
     });
 
     const leads = signals

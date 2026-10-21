@@ -28,10 +28,21 @@ interface RedditSearchResponse {
   data: { children: RedditPost[] };
 }
 
+function redditTimeParam(dateRange?: string): string {
+  switch (dateRange) {
+    case "today": return "day";
+    case "7d":    return "week";
+    case "30d":   return "month";
+    case "90d":   return "year";
+    default:      return "month";
+  }
+}
+
 export async function scrapeReddit(config: ScrapeConfig = {}): Promise<RawSignal[]> {
   const signals: RawSignal[] = [];
   const maxResults = config.maxResults ?? 50;
   const seen = new Set<string>();
+  const t = redditTimeParam(config.dateRange);
 
   // Build targeted queries from the user's niche
   const queries =
@@ -47,7 +58,7 @@ export async function scrapeReddit(config: ScrapeConfig = {}): Promise<RawSignal
       fetches.push(
         (async () => {
           try {
-            const url = `https://www.reddit.com/r/${sub}/search.json?q=${encodeURIComponent(query)}&restrict_sr=true&sort=new&limit=10&t=month`;
+            const url = `https://www.reddit.com/r/${sub}/search.json?q=${encodeURIComponent(query)}&restrict_sr=true&sort=new&limit=10&t=${t}`;
             const res = await fetch(url, {
               headers: {
                 "User-Agent": "LeadIntel/1.0 (lead intelligence aggregator)",
@@ -92,7 +103,7 @@ export async function scrapeReddit(config: ScrapeConfig = {}): Promise<RawSignal
     fetches.push(
       (async () => {
         try {
-          const url = `https://www.reddit.com/search.json?q=${encodeURIComponent(query)}&sort=new&limit=15&t=month`;
+          const url = `https://www.reddit.com/search.json?q=${encodeURIComponent(query)}&sort=new&limit=15&t=${t}`;
           const res = await fetch(url, {
             headers: {
               "User-Agent": "LeadIntel/1.0 (lead intelligence aggregator)",

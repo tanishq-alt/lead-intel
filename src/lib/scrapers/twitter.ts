@@ -1,86 +1,254 @@
 import type { RawSignal, ScrapeConfig } from "./types";
 import { buildQueriesFromNiche, FALLBACK_QUERIES } from "./queries";
+import { searchDDG } from "./duckduckgo";
 
-// Public Nitter instances — tried in order until one works
-const NITTER_INSTANCES = [
-  "https://nitter.privacydev.net",
-  "https://nitter.poast.org",
-  "https://nitter.1d4.us",
-  "https://nitter.kavin.rocks",
-];
+// Twitter's public bearer token (embedded in their web app, used for guest token flow)
+const PUBLIC_BEARER =
+  "AAAAAAAAAAAAAAAAAAAAANRILgAAAAAAnNwIzUejRCOuH5E6I4xL1g38Q3aQ%3D3D5h";
 
-interface NitterTweet {
-  text: string;
-  author: string;
-  authorUrl: string;
-  url: string;
-  date: string;
-  stats: { replies: number; retweets: number; likes: number };
+interface GuestTokenCache {
+  token: string;
+  expiresAt: number;
 }
 
-function parseTweetsFromHtml(html: string, instanceBase: string): NitterTweet[] {
-  const tweets: NitterTweet[] = [];
-  // Each tweet lives in a <div class="timeline-item">
-  const itemRegex = /<div class="timeline-item[^"]*">([\s\S]*?)<\/div>\s*<\/div>\s*<\/div>/g;
-  let match: RegExpExecArray | null;
+let guestTokenCache: GuestTokenCache | null = null;
 
-  while ((match = itemRegex.exec(html)) !== null) {
-    const block = match[1];
+function getBearer(): string {
+  return process.env.TWITTER_BEARER_TOKEN || PUBLIC_BEARER;
+}
 
-    const permalinkMatch = block.match(/href="([^"]+\/status\/[^"]+)"/);
-    if (!permalinkMatch) continue;
-    const path = permalinkMatch[1];
-    const url = `https://twitter.com${path}`;
-
-    const authorMatch = block.match(/class="username"[^>]*>@?([^<]+)</);
-    const author = authorMatch?.[1]?.trim() ?? "unknown";
-
-    const textMatch = block.match(/<div class="tweet-content[^"]*"[^>]*>([\s\S]*?)<\/div>/);
-    let text = textMatch?.[1] ?? "";
-    // Strip HTML tags from tweet text
-    text = text.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
-    if (!text || text.length < 10) continue;
-
-    const dateMatch = block.match(/datetime="([^"]+)"/);
-    const date = dateMatch?.[1] ?? new Date().toISOString();
-
-    const likesMatch = block.match(/class="icon-heart"[^>]*>[\s\S]*?<span[^>]*>([^<]*)</);
-    const likes = parseInt(likesMatch?.[1]?.replace(/,/g, "") ?? "0") || 0;
-
-    tweets.push({
-      text,
-      author,
-      authorUrl: `${instanceBase}/${author}`,
-      url,
-      date,
-      stats: { replies: 0, retweets: 0, likes },
+async function getGuestToken(forceRefresh = false): Promise<string | null> {
+  if (!forceRefresh && guestTokenCache && Date.now() < guestTokenCache.expiresAt) {
+    return guestTokenCache.token;
+  }
+  try {
+    const res = await fetch("https://api.twitter.com/1.1/guest/activate.json", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${PUBLIC_BEARER}`,
+      },
+      signal: AbortSignal.timeout(10000),
     });
+    if (!res.ok) return null;
+    const data = (await res.json()) as { guest_token?: string };
+    if (!data.guest_token) return null;
+    guestTokenCache = {
+      token: data.guest_token,
+      expiresAt: Date.now() + 15 * 60 * 1000,
+    };
+    return data.guest_token;
+  } catch {
+    return null;
   }
-
-  return tweets;
 }
 
-async function fetchFromNitter(query: string): Promise<NitterTweet[]> {
-  for (const instance of NITTER_INSTANCES) {
-    try {
-      const url = `${instance}/search?q=${encodeURIComponent(query)}&f=tweets`;
-      const res = await fetch(url, {
-        headers: {
-          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-          "Accept": "text/html,application/xhtml+xml",
-          "Accept-Language": "en-US,en;q=0.9",
-        },
-        signal: AbortSignal.timeout(8000),
-      });
-      if (!res.ok) continue;
-      const html = await res.text();
-      const tweets = parseTweetsFromHtml(html, instance);
-      if (tweets.length > 0) return tweets;
-    } catch {
-      // try next instance
-    }
+interface TwitterSearchTweet {
+  id_str: string;
+  full_text?: string;
+  text?: string;
+  created_at: string;
+  favorite_count?: number;
+  retweet_count?: number;
+  user?: {
+    screen_name: string;
+    name: string;
+  };
+  entities?: {
+    urls?: { expanded_url: string }[];
+  };
+}
+
+interface TwitterSearchResponse {
+  statuses?: TwitterSearchTweet[];
+}
+
+async function searchTwitterApi(query: string): Promise<TwitterSearchTweet[]> {
+  const bearer = getBearer();
+  const useUserToken = bearer !== PUBLIC_BEARER;
+
+  let guestToken: string | null = null;
+  if (!useUserToken) {
+    guestToken = await getGuestToken();
+    if (!guestToken) return [];
   }
-  return [];
+
+  const url = `https://api.twitter.com/1.1/search/tweets.json?q=${encodeURIComponent(
+    query,
+  )}&result_type=recent&count=20&tweet_mode=extended`;
+
+  try {
+    const headers: Record<string, string> = {
+      Authorization: `Bearer ${bearer}`,
+    };
+    if (guestToken) headers["x-guest-token"] = guestToken;
+
+    const res = await fetch(url, { headers, signal: AbortSignal.timeout(10000) });
+    if (res.status === 403 && !useUserToken) {
+      guestTokenCache = null;
+      const refreshed = await getGuestToken(true);
+      if (!refreshed) return [];
+      const retry = await fetch(url, {
+        headers: { Authorization: `Bearer ${bearer}`, "x-guest-token": refreshed },
+        signal: AbortSignal.timeout(10000),
+      });
+      if (!retry.ok) return [];
+      const data = (await retry.json()) as TwitterSearchResponse;
+      return data.statuses ?? [];
+    }
+    if (!res.ok) return [];
+    const data = (await res.json()) as TwitterSearchResponse;
+    return data.statuses ?? [];
+  } catch {
+    return [];
+  }
+}
+
+interface SyndicationTweet {
+  id_str: string;
+  full_text?: string;
+  text?: string;
+  created_at: string;
+  favorite_count?: number;
+  retweet_count?: number;
+  user?: { screen_name: string; name: string };
+}
+
+async function fetchSyndicationTimeline(handle: string): Promise<SyndicationTweet[]> {
+  const clean = handle.replace(/^@/, "");
+  const url = `https://syndication.twitter.com/srv/timeline-profile/screen-name/${encodeURIComponent(
+    clean,
+  )}`;
+  try {
+    const res = await fetch(url, {
+      headers: {
+        "User-Agent":
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        Accept: "text/html,application/xhtml+xml",
+      },
+      signal: AbortSignal.timeout(10000),
+    });
+    if (!res.ok) return [];
+    const html = await res.text();
+    // Syndication endpoint returns an HTML shell with a JSON blob in __NEXT_DATA__ or similar
+    const nextDataMatch = html.match(
+      /<script[^>]+id=["']__NEXT_DATA__["'][^>]*>([\s\S]*?)<\/script>/,
+    );
+    if (!nextDataMatch) return [];
+    try {
+      const json = JSON.parse(nextDataMatch[1]);
+      const entries =
+        json?.props?.pageProps?.timeline?.entries ??
+        json?.props?.pageProps?.contextProvider?.initialState?.timeline ??
+        [];
+      const tweets: SyndicationTweet[] = [];
+      const traverse = (node: unknown): void => {
+        if (!node || typeof node !== "object") return;
+        if (Array.isArray(node)) {
+          node.forEach(traverse);
+          return;
+        }
+        const o = node as Record<string, unknown>;
+        if (typeof o.id_str === "string" && (typeof o.full_text === "string" || typeof o.text === "string")) {
+          tweets.push(o as unknown as SyndicationTweet);
+        }
+        Object.values(o).forEach(traverse);
+      };
+      traverse(entries);
+      // Also crawl the whole JSON
+      if (tweets.length === 0) traverse(json);
+      return tweets;
+    } catch {
+      return [];
+    }
+  } catch {
+    return [];
+  }
+}
+
+function tweetToSignal(
+  t: TwitterSearchTweet | SyndicationTweet,
+  competitorName?: string,
+): RawSignal | null {
+  if (!t.id_str) return null;
+  const text = t.full_text ?? t.text ?? "";
+  if (!text) return null;
+  const screenName = t.user?.screen_name ?? "unknown";
+  const url = `https://twitter.com/${screenName}/status/${t.id_str}`;
+  const created = new Date(t.created_at);
+  return {
+    id: `tw_${t.id_str}`,
+    title: text.slice(0, 120),
+    body: text,
+    author: screenName,
+    authorUrl: `https://twitter.com/${screenName}`,
+    url,
+    channel: "TWITTER",
+    score: t.favorite_count ?? 0,
+    commentCount: t.retweet_count ?? 0,
+    createdAt: isNaN(created.getTime()) ? new Date() : created,
+    tags: competitorName ? [competitorName] : [],
+    competitorName,
+  };
+}
+
+export async function scrapeTwitterProfile(
+  handle: string,
+  maxResults = 20,
+): Promise<RawSignal[]> {
+  const clean = handle.replace(/^@/, "");
+  const tweets = await fetchSyndicationTimeline(clean);
+  const signals: RawSignal[] = [];
+  const seen = new Set<string>();
+  for (const t of tweets) {
+    if (signals.length >= maxResults) break;
+    const sig = tweetToSignal(t, clean);
+    if (!sig || seen.has(sig.id)) continue;
+    seen.add(sig.id);
+    signals.push(sig);
+  }
+  if (signals.length > 0) return signals;
+
+  // Fallback: API search for from:handle
+  const apiTweets = await searchTwitterApi(`from:${clean}`);
+  for (const t of apiTweets) {
+    if (signals.length >= maxResults) break;
+    const sig = tweetToSignal(t, clean);
+    if (!sig || seen.has(sig.id)) continue;
+    seen.add(sig.id);
+    signals.push(sig);
+  }
+  if (signals.length > 0) return signals;
+
+  // Last resort: SearXNG
+  try {
+    const ddg = await searchDDG(`site:twitter.com/${clean}`, 10);
+    for (const r of ddg) {
+      if (signals.length >= maxResults) break;
+      if (!r.url.includes("/status/")) continue;
+      const idMatch = r.url.match(/status\/(\d+)/);
+      if (!idMatch) continue;
+      const id = idMatch[1];
+      if (seen.has(`tw_${id}`)) continue;
+      seen.add(`tw_${id}`);
+      signals.push({
+        id: `tw_${id}`,
+        title: r.title.slice(0, 120),
+        body: r.snippet || r.title,
+        author: clean,
+        authorUrl: `https://twitter.com/${clean}`,
+        url: r.url,
+        channel: "TWITTER",
+        score: 0,
+        commentCount: 0,
+        createdAt: new Date(),
+        tags: [clean],
+        competitorName: clean,
+      });
+    }
+  } catch {
+    // ignore
+  }
+  return signals;
 }
 
 export async function scrapeTwitter(config: ScrapeConfig = {}): Promise<RawSignal[]> {
@@ -96,25 +264,52 @@ export async function scrapeTwitter(config: ScrapeConfig = {}): Promise<RawSigna
   for (const query of queries.slice(0, 5)) {
     if (signals.length >= maxResults) break;
     try {
-      const tweets = await fetchFromNitter(query);
-      for (const tweet of tweets) {
-        if (seen.has(tweet.url) || signals.length >= maxResults) continue;
-        seen.add(tweet.url);
-        signals.push({
-          id: `tw_${Buffer.from(tweet.url).toString("base64").slice(0, 20)}`,
-          title: tweet.text.slice(0, 120),
-          body: tweet.text,
-          author: tweet.author,
-          authorUrl: `https://twitter.com/${tweet.author}`,
-          url: tweet.url,
-          channel: "TWITTER",
-          score: tweet.stats.likes,
-          commentCount: tweet.stats.replies,
-          createdAt: new Date(tweet.date),
-        });
+      const tweets = await searchTwitterApi(query);
+      for (const t of tweets) {
+        if (signals.length >= maxResults) break;
+        const sig = tweetToSignal(t);
+        if (!sig || seen.has(sig.id)) continue;
+        seen.add(sig.id);
+        signals.push(sig);
       }
     } catch {
       // skip
+    }
+  }
+
+  // Fallback via SearXNG if API fully failed
+  if (signals.length === 0) {
+    for (const query of queries.slice(0, 3)) {
+      try {
+        const ddg = await searchDDG(`site:twitter.com ${query}`, 10);
+        for (const r of ddg) {
+          if (signals.length >= maxResults) break;
+          if (!r.url.includes("/status/")) continue;
+          const idMatch = r.url.match(/status\/(\d+)/);
+          if (!idMatch) continue;
+          const id = idMatch[1];
+          const key = `tw_${id}`;
+          if (seen.has(key)) continue;
+          seen.add(key);
+          const handleMatch = r.url.match(/twitter\.com\/([^/]+)\/status/);
+          const screenName = handleMatch?.[1] ?? "unknown";
+          signals.push({
+            id: key,
+            title: r.title.slice(0, 120),
+            body: r.snippet || r.title,
+            author: screenName,
+            authorUrl: `https://twitter.com/${screenName}`,
+            url: r.url,
+            channel: "TWITTER",
+            score: 0,
+            commentCount: 0,
+            createdAt: new Date(),
+            tags: [],
+          });
+        }
+      } catch {
+        // skip
+      }
     }
   }
 

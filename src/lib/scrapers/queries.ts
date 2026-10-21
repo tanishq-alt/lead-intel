@@ -34,10 +34,20 @@ const COMPETITOR_TEMPLATES = [
   "{c} vs",
 ];
 
+const COMPETITOR_MONITOR_TEMPLATES = [
+  '"{c}" new feature',
+  '"{c}" product update',
+  '"{c}" launches',
+  '"{c}" introducing',
+  '"{c}" free guide OR free ebook OR webinar OR template',
+  '"{c}" changelog',
+  '"{c}" announcement',
+];
+
 export function buildQueriesFromNiche(
   keywords: string[],
   competitors: string[] = [],
-  maxQueries = 8
+  maxQueries = 8,
 ): string[] {
   const queries: string[] = [];
 
@@ -57,15 +67,35 @@ export function buildQueriesFromNiche(
     }
   }
 
-  // Deduplicate and cap
   return [...new Set(queries)].slice(0, maxQueries);
+}
+
+export function buildCompetitorMonitorQueries(
+  competitorName: string,
+  twitterHandle?: string,
+): string[] {
+  const name = competitorName.trim();
+  if (!name) return [];
+  const queries = COMPETITOR_MONITOR_TEMPLATES.map((t) => t.replace("{c}", name));
+  if (twitterHandle) {
+    queries.push(`from:${twitterHandle.replace(/^@/, "")}`);
+  }
+  return [...new Set(queries)];
 }
 
 // If no keywords or competitors provided, these generic queries are used as fallback
 export const FALLBACK_QUERIES = [
+  "hr software alternative",
+  "hris replacement",
+  "onboarding software recommendation",
+  "payroll software switch",
+  "bamboohr alternative",
+  "workday too expensive",
+  "rippling vs",
+  "gusto alternative",
+  "adp replacement",
   "looking for software alternative",
   "recommend a tool for",
-  "alternatives to",
   "switching from",
   "frustrated with",
   "too expensive alternative",

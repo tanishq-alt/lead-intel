@@ -31,3 +31,15 @@ npm-debug.log*
 .vscode/
 .idea/
 .vercel
+
+# Lead research data (keep local)
+*.csv
+manual_onboarding_leads*.csv
+
+# TypeScript build info
+*.tsbuildinfo
+tsconfig.tsbuildinfo
+
+# Scrape output
+/tmp/
+scrape-result.json

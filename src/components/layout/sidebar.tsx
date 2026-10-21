@@ -10,15 +10,19 @@ import {
   Brain,
   Zap,
   Table2,
+  Building2,
+  Target,
 } from "lucide-react";
 
 const navItems = [
-  { href: "/clay", label: "Live Scraper", icon: Table2, badge: "LIVE" },
-  { href: "/", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/channels", label: "Channels", icon: Radio },
-  { href: "/leads", label: "Saved Leads", icon: Users },
-  { href: "/runs", label: "Run Logs", icon: PlayCircle },
-  { href: "/memory", label: "Memory", icon: Brain },
+  { href: "/clay",        label: "Live Scraper",         icon: Table2,         badge: "LIVE" },
+  { href: "/enrich",      label: "Enrichment",           icon: Building2,      badge: "NEW" },
+  { href: "/",            label: "Dashboard",            icon: LayoutDashboard },
+  { href: "/channels",    label: "Channels",             icon: Radio },
+  { href: "/competitors", label: "Competitors",          icon: Target,         badge: "NEW" },
+  { href: "/leads",       label: "Saved Leads",          icon: Users },
+  { href: "/runs",        label: "Run Logs",             icon: PlayCircle },
+  { href: "/memory",      label: "Memory",               icon: Brain },
 ];
 
 export function Sidebar() {
@@ -54,7 +58,11 @@ export function Sidebar() {
               <Icon className="w-4 h-4 flex-shrink-0" />
               <span className="flex-1">{label}</span>
               {badge && (
-                <span className="text-[9px] font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 rounded px-1 py-0.5">
+                <span className={`text-[9px] font-bold rounded px-1 py-0.5 border ${
+                  badge === "NEW"
+                    ? "bg-violet-500/20 text-violet-400 border-violet-500/30"
+                    : "bg-emerald-500/20 text-emerald-400 border-emerald-500/30"
+                }`}>
                   {badge}
                 </span>
               )}
